@@ -1,0 +1,13 @@
+{
+    "name": "markosutija/php-router",
+    "description": "PHP Router for simpler coding.",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Marko Sutija",
+            "email": "markosutija@gmail.com"
+        }
+    ],
+    "require": {}
+}
