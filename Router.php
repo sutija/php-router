@@ -1,5 +1,18 @@
 <?php
 
+namespace Sutija\Router;
+
+use Closure;
+use Exception;
+
+const GET = 'GET';
+const PATCH = 'PATCH';
+const POST = 'POST';
+const PUT = 'PUT';
+const DELETE = 'DELETE';
+const OPTIONS = 'OPTIONS';
+const COPY = 'COPY';
+
 /**
  * @author Marko Šutija <markosutija@gmail.com>
  * @version 1.0
@@ -9,148 +22,174 @@
  */
 class Router
 {
-    const METHOD_GET = 'GET';
-    const METHOD_PATCH = 'PATCH';
-    const METHOD_POST = 'POST';
-    const METHOD_PUT = 'PUT';
-    const METHOD_DELETE = 'DELETE';
-    const METHOD_OPTIONS = 'OPTIONS';
-    const METHOD_COPY = 'COPY';
-
-    protected static $routes = [];
-
-    /**
-     * @var \stdClass $queryParams
-     */
-    protected static $queryParams;
-
+    protected const CALLBACK_STATIC = 'CALLBACK_STATIC';
+    protected const CALLBACK_CLASS = 'CALLBACK_CLASS';
+    protected const CALLBACK_CLOSURE = 'CALLBACK_CLOSURE';
+    protected static $instance;
+    protected $routes;
     /**
      * @var RouterData $routeData
      */
-    protected static $routeData;
+    protected $routeData;
 
-    static function getRequestMethod()
+    public function __construct()
     {
-        return $_SERVER['REQUEST_METHOD'];
-    }
+        $this->routes = new Routes();
 
-    static function addRoute($route, $callback, array $allowedRequestMethods = [])
-    {
-        static::$routes[$route] = [
-            'methods' => $allowedRequestMethods,
-            'callback' => $callback
-        ];
-    }
-
-    static function resolve($route, $method)
-    {
-        $matchedRoute = static::matchRoute($route);
-
-        if (!$matchedRoute) {
-            return false;
-        }
-
-        $url = explode('?', $route);
-        $callback = static::$routes[$matchedRoute]['callback'];
-
-        if (is_string($callback)) {
-            $callableMethod = [$callback, strtolower($method)];
-            if (method_exists($callback, strtolower($method))) {
-                call_user_func_array($callableMethod, []);
-            } else {
-                echo 'FORBIDDEN';
-            }
-        } else if (is_object($callback)){
-            $callback->resolve();
-        } else if (is_callable($callback)) {
-            $callback('nesto');
-        }
-
-        return $url[0];
-    }
-
-    static function matchRoute($route)
-    {
-        // Separate current route
-        $separatedRoute = array_values(array_filter(explode('/', $route), function ($item) {
-            return $item !== '';
-        }));
-
-        // Filter routes to find exact route
-        $matchedRoutes = array_values(array_filter(array_keys(static::$routes), function ($routeTemplate) use ($separatedRoute, $route) {
-            $variableIndex = [];
-
-            // First separate route
-            $routeParts = array_values(array_filter(explode('/', $routeTemplate), function ($item) {
-                return $item !== '';
-            }));
-
-            // Then locate all indexes of route variables
-            foreach ($routeParts as $key => $part) {
-                if ($part[0] === ':') {
-                    // Add variable index
-                    $variableIndex[] = $key;
-                }
-            }
-
-            // Replace variable indexes in both routes
-            foreach ($variableIndex as $index) {
-                if (isset($separatedRoute[$index])) {
-                    $separatedRoute[$index] = '__VARIABLE__';
-                }
-                if (isset($routeParts[$index])) {
-                    $routeParts[$index] = '__VARIABLE__';
-                }
-            }
-
-            // Compare routes
-            if (implode('/', $separatedRoute) === implode('/', $routeParts)) {
-                static::$routeData = static::resolveData($routeTemplate, $route);
-                return true;
-            }
-
-            return false;
-        }));
-
-
-        return !empty($matchedRoutes) ? $matchedRoutes[0] : false;
-    }
-
-    static function getQueryParams()
-    {
-        $queryParams = [];
+        $this->routeData = new RouterData();
+        $this->routeData->setRoute($_SERVER['PATH_INFO']);
+        $this->routeData->setRequestMethod($_SERVER['REQUEST_METHOD']);
 
         if (isset($_SERVER['QUERY_STRING'])) {
-            foreach (explode('&', $_SERVER['QUERY_STRING']) as $item) {
-                $itemParts = explode('=', $item);
-                $queryParams[$itemParts[0]] = $itemParts[1];
-            }
+            $this->routeData->setRequestQueryParams($_SERVER['QUERY_STRING']);
         }
-
-        return $queryParams;
     }
 
-    /**
-     * @param $routeTemplate
-     * @param $route
-     * @return RouterData
-     */
-    public static function resolveData($routeTemplate, $route)
+    public static function getInstance(): Router
     {
-        $routerData = new RouterData();
+        if (!static::$instance) {
+            static::$instance = new self();
+        }
 
-        $route = explode('/', $route);
+        return static::$instance;
+    }
+
+    public function addRoute(Route $route): void
+    {
+        $this->routes->add($route);
+    }
+
+    public function resolve(string $route = null, string $method = null, string $query = null): string
+    {
+        $this->fillRouteData($route, $method, $query);
+
+        $requestMethod = ucfirst(strtolower($this->routeData->getRequestMethod()));
+        $requestMethodMethod = "resolve$requestMethod";
+
+        $matchedRoute = $this->routes->find($this->routeData->getRoute());
+
+        if (!$matchedRoute) {
+            http_response_code(404);
+            return false;
+        }
+
+        if (!empty($matchedRoute->getAllowedMethods())
+            && !in_array($this->routeData->getRequestMethod(), $matchedRoute->getAllowedMethods())) {
+            http_response_code(405);
+            return false;
+        }
+
+        $this->resolveData($matchedRoute->getRoute());
+        $this->resolveQueryParams();
+
+        switch ($this->getCallBackType($matchedRoute->getCallback())) {
+            case self::CALLBACK_CLOSURE:
+                $matchedRoute->getCallback()();
+                break;
+
+            case self::CALLBACK_CLASS:
+                $this->doClassCallback($matchedRoute);
+                break;
+
+            case self::CALLBACK_STATIC:
+                $this->doStaticCallback($matchedRoute);
+                break;
+        };
+
+        return $this->getRouteData()->getRoute();
+    }
+
+    protected function fillRouteData(?string $route, ?string $method, ?string $query): void
+    {
+        if ($route) {
+            $this->routeData->setRoute($route);
+        }
+
+        if ($query) {
+            $this->routeData->setRequestQueryParams($query);
+        }
+
+        if ($method) {
+            $this->routeData->setRequestMethod($method);
+        }
+    }
+
+    protected function resolveData(string $routeTemplate)
+    {
+        $route = explode('/', $this->routeData->getRoute());
         $template = explode('/', $routeTemplate);
 
         foreach ($template as $key => $value) {
             if (preg_match('/[:]/', $value)) {
                 $k = str_replace(':', '', $value);
                 if (isset($route[$key])) {
-                    $routerData->setData($k, $route[$key]);
+                    $this->routeData->setData($k, $route[$key]);
                 }
             }
         }
+    }
 
-        return $routerData;
+    protected function resolveQueryParams()
+    {
+        $queryParams = [];
+
+        foreach (explode('&', $this->routeData->getRequestQueryParams()) as $item) {
+            $itemParts = explode('=', $item);
+            $queryParams[$itemParts[0]] = $itemParts[1];
+        }
+
+        $this->routeData->setQueryParams($queryParams);
+    }
+
+    protected function getCallBackType($callback): ?string
+    {
+        $type = null;
+
+        if (is_string($callback)) {
+            $type = self::CALLBACK_STATIC;
+        }
+
+        if (is_object($callback) && !($callback instanceof Closure)) {
+            $type = self::CALLBACK_CLASS;
+        }
+
+        if ($callback instanceof Closure) {
+            $type = self::CALLBACK_CLOSURE;
+        }
+
+        return $type;
+    }
+
+    protected function doClassCallback(Route $matchedRoute)
+    {
+        $requestMethodMethod = 'resolve' . ucfirst(strtolower($this->routeData->getRequestMethod()));
+
+        // check if we have resolvePost/resolveGet...
+        if (method_exists($matchedRoute->getCallback(), $requestMethodMethod)) {
+            $matchedRoute->getCallback()->$requestMethodMethod();
+        } // Call resolve
+        else {
+            $matchedRoute->getCallback()->resolve();
+        }
+    }
+
+    protected function doStaticCallback(Route $matchedRoute)
+    {
+        $requestMethodMethod = 'resolve' . ucfirst(strtolower($this->routeData->getRequestMethod()));
+
+        if (method_exists($matchedRoute->getCallback(), $requestMethodMethod)) {
+            $callableMethod = [$matchedRoute->getCallback(), $requestMethodMethod];
+            call_user_func_array($callableMethod, []);
+        } elseif (method_exists($matchedRoute->getCallback(), 'resolve')) {
+            $callableMethod = [$matchedRoute->getCallback(), 'resolve'];
+            call_user_func_array($callableMethod, []);
+        } else {
+            throw new Exception('Callback not found: ' . $matchedRoute->getCallback());
+        }
+    }
+
+    public function getRouteData(): RouterData
+    {
+        return $this->routeData;
     }
 }

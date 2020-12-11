@@ -1,13 +1,21 @@
 {
-    "name": "markosutija/php-router",
+    "name": "sutija/php-router",
     "description": "PHP Router for simpler coding.",
     "type": "library",
     "license": "MIT",
+    "version": "1.0.0",
     "authors": [
         {
             "name": "Marko Sutija",
             "email": "markosutija@gmail.com"
         }
     ],
-    "require": {}
+    "autoload": {
+        "psr-4": {
+            "Sutija\\Router\\": "./"
+        }
+    },
+    "require": {
+        "php": ">=7.1"
+    }
 }
