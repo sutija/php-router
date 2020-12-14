@@ -4,7 +4,7 @@ Minimum requirement PHP 7.1
 
 ### Installation:
 
-`composer --save sutija\php-router`
+`composer require sutija/php-router`
 
 ### Usage:
 
