@@ -2,6 +2,7 @@
 require_once '../vendor/autoload.php';
 
 use Sutija\Router\Route;
+use Sutija\Router\Router;
 use const Sutija\Router\GET;
 use const Sutija\Router\POST;
 
@@ -10,18 +11,18 @@ class M
 {
     public static function resolve()
     {
-        var_dump(\Sutija\Router\Router::getInstance()->getRouteData());
+        var_dump(Router::getInstance()->getRouteData());
     }
 
     public static function resolveGet()
     {
         echo 'GET';
-        var_dump(\Sutija\Router\Router::getInstance()->getRouteData());
+        var_dump(Router::getInstance()->getRouteData());
     }
 }
 
 
-$router = \Sutija\Router\Router::getInstance();
+$router = Router::getInstance();
 
 $router->addRoute((new Route())
     ->setRoute('/pages/:page_id/')
@@ -39,5 +40,3 @@ $router->addRoute((new Route())
 
 $router->resolve();
 
-
-echo 'test';
