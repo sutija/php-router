@@ -132,10 +132,13 @@ class Router
     protected function resolveQueryParams()
     {
         $queryParams = [];
+        $requestQuery = $this->routeData->getRequestQueryParams();
 
-        foreach (explode('&', $this->routeData->getRequestQueryParams()) as $item) {
-            $itemParts = explode('=', $item);
-            $queryParams[$itemParts[0]] = $itemParts[1];
+        if ($requestQuery) {
+            foreach (explode('&', $requestQuery) as $item) {
+                $itemParts = explode('=', $item);
+                $queryParams[$itemParts[0]] = $itemParts[1];
+            }
         }
 
         $this->routeData->setQueryParams($queryParams);

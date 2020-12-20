@@ -10,7 +10,7 @@ class RouterData
     protected $route;
     protected $requestMethod;
 
-    public function getRequestQueryParams(): string
+    public function getRequestQueryParams(): ?string
     {
         return $this->requestQueryParams;
     }
